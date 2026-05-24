@@ -1,0 +1,56 @@
+name:     PUSH2
+run-name: PUSH2 BY ${{ github.actor }}
+on:
+ push:
+    branches: ["main"] 
+ workflow_dispatch:
+
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+#   _____     ____     _   _ 
+#  | ___ |   |  _ \   | | | |
+#  | ____|   | | | |   \ V / 
+#  |_____)   |_| |_|    \_/ Rounded  
+#                           
+env:
+  EMAIL_FROM:      ${{ secrets.EMAIL_FROM }} 
+  EMAIL_TO:        ${{ secrets.EMAIL_TO }}
+# END [env] :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ 
+jobs:
+# :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+ JOB_SEND_EMAIL:
+  runs-on: ubuntu-latest
+  steps:
+
+#######################################################################
+#   STEP:                                              [ 2026_05_22 ] #
+  - name: STEP_CHECKOUT
+#######################################################################  
+    uses: actions/checkout@main  
+#   STEP [END] ########################################################    
+
+#######################################################################
+#   STEP:                                              [ 2026_05_23 ] #  
+  - name: REPOSITORY_REPORT
+#######################################################################
+    uses: hani86400/actions/repository_report@main
+    with:
+      IGNORE_FILE: .gitignore
+      TIME_ZONE: Asia/Riyadh
+#     REPORT_SUBJECT: TEST_REPORT
+#   STEP [END] ########################################################
+
+#######################################################################
+#   STEP:                                              [ 2026_05_22 ] #  
+  - name: REPORT_SEND
+#######################################################################
+    uses: hani86400/actions/send_email@main
+    with:
+      API_URL: ${{ vars.RESEND_API_URL }}
+      API_KEY: ${{ secrets.RESEND_API_KEY }}
+      FROM:    ${{ env.EMAIL_FROM }}
+      TO:      ${{ env.EMAIL_TO }}
+      SUBJECT: ${{ env.REPORT_SUBJECT }}
+      HTML:    ${{ env.REPORT_HTML }}      
+#   STEP [END] ########################################################
+#   JOB  [END] ::::::::::::::::::::::::::::::::::::::::::::::::::::::::

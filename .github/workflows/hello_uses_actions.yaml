@@ -1,0 +1,35 @@
+name: HELLO_USES_ACTIONS
+
+on:
+ workflow_dispatch:
+  inputs:
+#----------------------------------------------------------------------       
+   INPUT_MESSAGE: 
+    description: 'Message'
+    default: "Hani"
+    required: false
+#----------------------------------------------------------------------       
+   INPUT_COUNT: 
+    description: 'COUNT'
+    default: "2"
+    required: false
+#----------------------------------------------------------------------       
+      
+env:
+  MESSAGE:      ${{ github.event.inputs.INPUT_MESSAGE       || 'Raed' }}  
+  COUNT:        ${{ github.event.inputs.INPUT_COUNT       || '4' }}  
+
+jobs:
+  JOB_HELLO_USES_ACTIONS:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: HELLO_USES_ACTIONS
+        uses: hani86400/actions/hello@main 
+        with:
+          MSG: $MESSAGE
+          COUNT: $COUNT

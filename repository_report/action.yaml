@@ -1,0 +1,260 @@
+name: REPOSITORY_REPORT
+
+inputs:
+
+  IGNORE_FILE:
+    description: Ignore file path
+    required: false
+    default: ".gitignore"
+
+  REPORT_SUBJECT:
+    description: Report email subject
+    required: false
+    default: "NONE"
+
+  TIME_ZONE:
+    description: Report Time Zone
+    required: false
+    default: "NONE"
+runs:
+
+  using: composite
+
+  steps:
+
+    ####################################################################
+    # STEP_SET_IGNORE_FILE
+    ####################################################################
+
+    - name: STEP_SET_IGNORE_FILE
+      shell: bash
+      run: |
+
+        set -e
+        echo "[DEBUG] IGNORE_FILE=${{ inputs.IGNORE_FILE }}  REPORT_SUBJECT=${{ inputs.REPORT_SUBJECT }} TIME_ZONE=${{ inputs.TIME_ZONE }}"
+        IGNORE_FILE="${{ inputs.IGNORE_FILE }}"
+
+        touch "$IGNORE_FILE"
+
+        grep -qxF '/tmp' "$IGNORE_FILE" || echo '.git' >> "$IGNORE_FILE"
+
+        echo "IGNORE_FILE=$IGNORE_FILE" >> "$GITHUB_ENV"
+
+    ####################################################################
+    # STEP_SET_REPORT_SUBJECT
+    ####################################################################
+
+    - name: STEP_SET_REPORT_SUBJECT
+      shell: bash
+      run: |
+
+        set -e
+        TIME_ZONE=${{ inputs.TIME_ZONE }}
+        REPORT_SUBJECT="${{ inputs.REPORT_SUBJECT }}"
+        if [ -n "${TIME_ZONE}" ] && [ "${TIME_ZONE}" != "NONE" ]; then
+          export TZ="${TIME_ZONE}"
+          echo  "TZ=${TIME_ZONE}" >> $GITHUB_ENV
+          echo "[DEBUG]  NOW TZ=${TZ}"
+        else
+        echo "[DEBUG]  TZ=${TZ} "
+        fi
+
+
+        if [ "$REPORT_SUBJECT" = "NONE" ]
+        then
+
+          T_NOW=$(date -d "0 hour" +%Y_%m_%d---%H_%M_%S)
+           
+
+          REPORT_SUBJECT="PUSH_${T_NOW}_${{ github.repository }}"
+
+        fi
+
+        echo "REPORT_SUBJECT=$REPORT_SUBJECT" >> "$GITHUB_ENV"
+
+    ####################################################################
+    # STEP_MAKE_REPORT
+    ####################################################################
+
+    - name: STEP_MAKE_REPORT
+      shell: bash
+      run: |
+
+        set -e
+
+        REPORT_FILE="/tmp/temp_report"
+
+        ##################################################################
+        # BUILD FIND EXCLUDES
+        ##################################################################
+
+        FIND_EXCLUDES=()
+
+        while IFS= read -r ITEM
+        do
+
+          [ -z "$ITEM" ] && continue
+
+          ITEM="${ITEM#/}"
+
+          FIND_EXCLUDES+=("!" "-path" "./${ITEM}/*")
+
+        done < "$IGNORE_FILE"
+
+        ##################################################################
+        # BUILD TREE EXCLUDES
+        ##################################################################
+
+        TREE_IGNORE=$(
+          sed \
+            -e 's#^/##' \
+            -e '/^$/d' \
+            "$IGNORE_FILE" |
+          paste -sd '|'
+        )
+
+        ##################################################################
+        # BUILD REPORT
+        ##################################################################
+
+        cat > "$REPORT_FILE" <<EOT
+        <!DOCTYPE html>
+
+        <html>
+
+        <head>
+
+          <title>${REPORT_SUBJECT}</title>
+
+          <style>
+
+            .r0 {
+              font-family: Verdana;
+              font-size: 22pt;
+              border: 1px solid #6fabda;
+              background-color: #6fabda;
+              color: #FFFFFF;
+            }
+
+            .r1 {
+              font-family: Verdana;
+              font-size: 15pt;
+              border: 1px solid #6fabda;
+              background-color: #FFFFFF;
+            }
+
+            .r2 {
+              font-family: Verdana;
+              font-size: 15pt;
+              border: 1px solid #6fabda;
+              background-color: #905425;
+              color: #FFFFFF;
+            }
+
+            BODY {
+              font-family: monospace, sans-serif;
+              color: black;
+            }
+
+            P {
+              font-family: monospace, sans-serif;
+              color: black;
+              margin: 0;
+              padding: 0;
+            }
+
+            A:visited {
+              text-decoration: none;
+            }
+
+            A:link {
+              text-decoration: none;
+            }
+
+            A:hover {
+              text-decoration: underline;
+              background-color: yellow;
+            }
+
+            .VERSION { font-size: small; font-family: arial,sans-serif; }
+            .NORM  { color: black; }
+            .FIFO  { color: purple; }
+            .CHAR  { color: yellow; }
+            .DIR   { color: blue; }
+            .BLOCK { color: yellow; }
+            .LINK  { color: aqua; }
+            .SOCK  { color: fuchsia; }
+            .EXEC  { color: green; }
+
+          </style>
+
+        </head>
+
+        <body>
+
+        <table cellpadding='10' cellspacing='0' width='90%'>
+
+          <tr><th class='r0'>Date</th></tr>
+          <tr><td class='r2'>$(date -d "0 hour" +%Y_%m_%d_%H_%M_%S)</td></tr>
+
+          <tr><th class='r0'>Repository</th></tr>
+          <tr><td class='r1'>${{ github.repository }}</td></tr>
+
+          <tr><th class='r0'>Ref</th></tr>
+          <tr><td class='r1'>${{ github.ref_name }}</td></tr>
+
+          <tr><th class='r0'>Actor</th></tr>
+          <tr><td class='r1'>${{ github.actor }}</td></tr>
+
+          <tr><th class='r0'>Committer</th></tr>
+          <tr><td class='r1'>${{ github.event.head_commit.author.name }}</td></tr>
+
+          <tr><th class='r0'>Pusher</th></tr>
+          <tr><td class='r1'>${{ github.event.pusher.name }}</td></tr>
+
+          <tr><th class='r0'>Files</th></tr>
+
+          <tr>
+            <td class='r1'>
+              <pre>$(
+                find . -maxdepth 9 -type f "${FIND_EXCLUDES[@]}" | sort
+              )</pre>
+            </td>
+          </tr>
+
+          <tr><th class='r0'>Tree</th></tr>
+
+          <tr>
+            <td class='r1'>
+              $(
+                tree \
+                  -a \
+                  --dirsfirst \
+                  --du \
+                  -h \
+                  -D \
+                  -F \
+                  -I "$TREE_IGNORE" \
+                  -H . |
+                perl -0777 -ne 'print $1 if /(<p\b[^>]*>.*?<\/p>)/s'
+              )
+            </td>
+          </tr>
+
+        </table>
+
+        </body>
+        </html>
+        EOT
+
+        ##################################################################
+        # EXPORT REPORT_HTML
+        ##################################################################
+
+        REPORT_HTML="$(cat "$REPORT_FILE")"
+
+        {
+          echo "REPORT_HTML<<EOF"
+          echo "$REPORT_HTML"
+          echo "EOF"
+        } >> "$GITHUB_ENV"

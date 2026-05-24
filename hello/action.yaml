@@ -1,0 +1,26 @@
+name: "Hello Action"
+
+inputs:
+  MSG:
+    required: true
+
+  COUNT:
+    required: false
+    default: "1"
+
+runs:
+  using: "composite"
+
+  steps:
+    - shell: bash
+      run: |
+
+        MSG="${{ inputs.MSG }}"
+        COUNT="${{ inputs.COUNT }}"
+        echo "## 🔹 Hello Action" >> $GITHUB_STEP_SUMMARY
+        for (( i=0; i<COUNT; i++ ))
+        do
+            echo "$i : $MSG"
+            echo "- ✅ Line $i: $MSG"   >> $GITHUB_STEP_SUMMARY                    
+        done
+
