@@ -1,0 +1,288 @@
+name: LIB_CLOUDFLARE
+
+inputs:
+
+  API_TOKEN:
+    description: CloudFlare API Token
+    required: true
+
+  ZONE_ID:
+    description: CloudFlare ZONE ID
+    required: true
+
+  REC_FUNCTION:
+    description: CloudFlare Function (ADD DEL LIST)
+    required: true
+    default: LIST
+
+  REC_TYPE:
+    description: CloudFlare Record Type (A TXT CNAME MX ...)
+    required: false
+    default: NONE
+
+  REC_NAME:
+    description: CloudFlare Record Name (app api q info ...)
+    required: false
+    default: NONE
+
+  REC_CONTENT:
+    description: CloudFlare Record Content (hani86400.github.io 18.19.20.21 ...)
+    required: false
+    default: NONE
+
+  REC_TTL:
+    description: CloudFlare Record TTL
+    required: false
+    default: Auto
+
+  REC_PROXIED:
+    description: CloudFlare Record Content (hani86400.github.io 18.19.20.21 ...)
+    required: false
+    default: false
+
+runs:
+
+  using: composite
+
+  steps:
+
+#######################################################################
+#   STEP:                                              [ 2026_05_25 ] #
+#######################################################################
+  - name: STEP_TIME_ZONE
+#######################################################################
+    id:   STEP_TIME_ZONE
+    shell: bash
+    run: |
+      set -x
+      TIME_ZONE=${{ inputs.TIME_ZONE }}
+      if [ -n "${TIME_ZONE}" ] && [ "${TIME_ZONE}" != "NONE" ]; then
+        export TZ="${TIME_ZONE}"
+        echo  "TZ=${TIME_ZONE}" >> $GITHUB_ENV
+        echo "[DEBUG]  NOW TZ=${TZ}"
+      else
+        echo "[DEBUG]  TZ=${TZ} "
+      fi
+      TIME_NOW=$(date -d "0 hour" +%Y_%m_%d_%H_%M_%S)
+      echo "TIME_NOW=${TIME_NOW}" >> "$GITHUB_ENV"
+      echo "[INFO] TIME_NOW=${TIME_NOW}"
+#   STEP [END] ########################################################
+
+
+#######################################################################
+#   STEP:                                              [ 2026_05_25 ] #
+#######################################################################
+  - name: STEP_INITIALIZE
+#######################################################################
+    id:   STEP_INITIALIZE
+    shell: bash
+    run: |
+      set -x
+
+      REC_FUNCTION="${{ inputs.REC_FUNCTION || 'NONE' }}"
+      REC_FUNCTION="${REC_FUNCTION^^}"
+
+      echo "REC_FUNCTION=${REC_FUNCTION}" >> "$GITHUB_ENV"
+
+      echo "API_TOKEN=${{ inputs.API_TOKEN }}" >> "$GITHUB_ENV"
+      echo "ZONE_ID=${{ inputs.ZONE_ID }}" >> "$GITHUB_ENV"
+      echo "REC_TYPE=${{ inputs.REC_TYPE }}" >> "$GITHUB_ENV"
+      echo "REC_NAME=${{ inputs.REC_NAME }}" >> "$GITHUB_ENV"
+      echo "REC_CONTENT=${{ inputs.REC_CONTENT }}" >> "$GITHUB_ENV"
+      echo "REC_TTL=${{ inputs.REC_TTL }}" >> "$GITHUB_ENV"
+      echo "REC_PROXIED=${{ inputs.REC_PROXIED }}" >> "$GITHUB_ENV"
+
+      cat > /tmp/cf_report <<EOF
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <title>CloudFlare DNS Report</title>
+
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+          }
+
+          h1 {
+            color: #333;
+          }
+
+          table {
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+          }
+
+          th, td {
+            border: 1px solid #cccccc;
+            padding: 8px;
+            text-align: left;
+            font-size: 14px;
+          }
+
+          th {
+            background: #333333;
+            color: white;
+          }
+
+          tr:nth-child(even) {
+            background: #f2f2f2;
+          }
+
+          code {
+            font-size: 12px;
+          }
+        </style>
+      </head>
+      <body>
+
+      <h1>CloudFlare DNS Report</h1>
+      EOF
+#   STEP [END] ########################################################
+
+
+#######################################################################
+#   STEP:                                              [ 2026_05_25 ] #
+#######################################################################
+  - name: RECORD_DELETE
+#######################################################################
+    id:   RECORD_DELETE
+    shell: bash
+    if: |
+      contains(env.REC_FUNCTION, 'DEL') ||
+      contains(env.REC_FUNCTION, 'DELETE') ||
+      contains(env.REC_FUNCTION, 'ADD') ||
+      contains(env.REC_FUNCTION, 'ADDING')
+    run: |
+      set -x
+
+      RECORD_ID=$(
+        curl -s -X GET \
+          "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records?type=${REC_TYPE}&name=${REC_NAME}" \
+          -H "Authorization: Bearer ${API_TOKEN}" \
+          -H "Content-Type: application/json" \
+        | jq -r --arg CONTENT "${REC_CONTENT}" '
+            .result[]
+            | select(.content == $CONTENT)
+            | .id
+          '
+      )
+
+      if [ -n "${RECORD_ID}" ] && [ "${RECORD_ID}" != "null" ]; then
+
+        curl -s -X DELETE \
+          "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records/${RECORD_ID}" \
+          -H "Authorization: Bearer ${API_TOKEN}" \
+          -H "Content-Type: application/json"
+
+        echo "[INFO] Deleted DNS record ${REC_TYPE} ${REC_NAME} ${REC_CONTENT}"
+
+      else
+
+        echo "[INFO] Record not found. Nothing deleted."
+
+      fi
+#   STEP [END] ########################################################
+
+
+#######################################################################
+#   STEP:                                              [ 2026_05_25 ] #
+#######################################################################
+  - name: RECORD_ADD
+#######################################################################
+    id:   RECORD_ADD
+    shell: bash
+    if: |
+      contains(env.REC_FUNCTION, 'ADD') ||
+      contains(env.REC_FUNCTION, 'ADDING')
+    run: |
+      set -x
+
+      curl -s -X POST \
+        "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records" \
+        -H "Authorization: Bearer ${API_TOKEN}" \
+        -H "Content-Type: application/json" \
+        --data @- <<EOF
+      {
+        "type": "${REC_TYPE}",
+        "name": "${REC_NAME}",
+        "content": "${REC_CONTENT}",
+        "ttl": "${REC_TTL}",
+        "proxied": "${REC_PROXIED}"
+      }
+      EOF
+
+      echo "[INFO] Added DNS record ${REC_TYPE} ${REC_NAME} ${REC_CONTENT}"
+#   STEP [END] ########################################################
+
+
+#######################################################################
+#   STEP:                                              [ 2026_05_25 ] #
+#######################################################################
+  - name: RECORD_LIST
+#######################################################################
+    id:   RECORD_LIST
+    shell: bash
+    if: always()
+    run: |
+      set -x
+
+      JSON_DATA=$(
+        curl -s -X GET \
+          "https://api.cloudflare.com/client/v4/zones/${ZONE_ID}/dns_records" \
+          -H "Authorization: Bearer ${API_TOKEN}" \
+          -H "Content-Type: application/json"
+      )
+
+      echo "<table>" >> /tmp/cf_report
+
+      echo "<tr>" >> /tmp/cf_report
+      echo "<th>ID</th>" >> /tmp/cf_report
+      echo "<th>NAME</th>" >> /tmp/cf_report
+      echo "<th>TYPE</th>" >> /tmp/cf_report
+      echo "<th>CONTENT</th>" >> /tmp/cf_report
+      echo "<th>TTL</th>" >> /tmp/cf_report
+      echo "<th>CREATED_ON</th>" >> /tmp/cf_report
+      echo "<th>MODIFIED_ON</th>" >> /tmp/cf_report
+      echo "</tr>" >> /tmp/cf_report
+
+      echo "$JSON_DATA" | jq -r '
+        .result[]? |
+        "<tr>" +
+        "<td><code>\(.id)</code></td>" +
+        "<td>\(.name)</td>" +
+        "<td>\(.type)</td>" +
+        "<td>\(.content)</td>" +
+        "<td>\(.ttl)</td>" +
+        "<td>\(.created_on)</td>" +
+        "<td>\(.modified_on)</td>" +
+        "</tr>"
+      ' >> /tmp/cf_report
+
+      echo "</table>" >> /tmp/cf_report
+#   STEP [END] ########################################################
+
+
+#######################################################################
+#   STEP:                                              [ 2026_05_25 ] #
+#######################################################################
+  - name: STEP_FINALIZE
+#######################################################################
+    id:   STEP_FINALIZE
+    shell: bash
+    if: always()
+    run: |
+      set -x
+
+      cat >> /tmp/cf_report <<EOF
+      </body>
+      </html>
+      EOF
+
+      echo "[INFO] HTML report created: /tmp/cf_report"
+      cat /tmp/cf_report
+#   STEP [END] ########################################################
+
